@@ -22,17 +22,23 @@ If NAME is non-nil, any provided PATH is ignored."
 (defun run-test (name &key (initial-base fallback-base) failp)
   "Try to parse the contents of test with filename NAME.
 
-If FAILP is non-nil, the parsing is expected to raise a `yacc:yacc-parse-error'."
+INITIAL-BASE will be passed on the `parse-ttl' to prevent errors caused by a missing base IRI.
+If FAILP is non-nil, the parsing is expected to raise a `yacc:yacc-parse-error' or
+`cl-ttl-parser:cl-ttl-parser-error'."
   (let ((contents (read-test-file :name name)))
     (if failp
         (block :no-error
           (handler-case
               (cl-ttl-parser:parse-ttl contents initial-base)
+            ;; TODO: Allow to specify which error is expected
             (yacc:yacc-parse-error (e)
               (format t "~&~A: [PASS] Received expected error \"~A\"" name e)
               (return-from :no-error t))
+            (cl-ttl-parser::cl-ttl-parser-error (e)
+              (format t "~&~A: [PASS] Received expected error \"~A\"" name e)
+              (return-from :no-error t)))
           (push name *failed-tests*)
-          (format t "~&~A: [FAIL] Expected a `yacc:yacc-parse-error' or `prefix-expand-error' but no such error was received" name))
+          (format t "~&~A: [FAIL] Expected a `yacc:yacc-parse-error' or `cl-ttl-parser-error' but no such error was received" name))
         (block :error
           (handler-case
               (cl-ttl-parser:parse-ttl contents initial-base)

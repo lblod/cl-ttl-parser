@@ -18,15 +18,21 @@
   ;; NOTE (09/03/2026): `cl-lex' does not seem to be able to handle a `?i' in the regex, using this dirty way to support case-insensitive sparqlBase.
   ("[Bb][Aa][Ss][Ee]"
    (return (values '|spBase| '|spBase|)))
+  ("@prefix"
+   (return (values '|@prefix| '|@prefix|)))
+  ;; NOTE (09/03/2026): See comment sparqlBase.
+  ("[Pp][Rr][Ee][Ff][Ii][Xx]"
+   (return (values '|spPrefix| '|spPrefix|)))
 
   ;; [18] IRIREF ::= '<' ([^#x00-#x20<>"{}|^`\] | UCHAR)* '>' /* #x00=NULL #01-#x1F=control codes #x20=space */
   ("<(([^<>\"{}|^`\\x00-\\x20\\\\]|\\\\u[0-9A-Fa-f]{4}|\\\\U[0-9A-Fa-f]{8})*)>"
    (return (values 'iriref $1)))
-  ;; [139s] PNAME_NS ::= PN_PREFIX? ':'
-  ;; TODO Support full PN_PREFIX character set
-  ("([a-zA-Z]*):"
-   (return (values 'pname_ns $1)))
   ;; [140s] PNAME_LN ::= PNAME_NS PN_LOCAL
+  ("([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8](([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[\\-0-9\\xB7]|\\.)*([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[\\-0-9\\xB7]))?)?:([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|:|[0-9]|%[0-9A-Fa-f][0-9A-Fa-f]|\\\\[_~.\\-!$&'()*+,;=/?#@%])(([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[\\-0-9\\xB7]|\\.|:|%[0-9A-Fa-f][0-9A-Fa-f]|\\\\[_~.\\-!$&'()*+,;=/?#@%])*([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[\\-0-9\\xB7]|:|%[0-9A-Fa-f][0-9A-Fa-f]|\\\\[_~.\\-!$&'()*+,;=/?#@%]))?"
+   (return (values 'pname_ln $@)))
+  ;; [139s] PNAME_NS ::= PN_PREFIX? ':'
+  ("([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8](([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[\\-0-9\\xB7]|\\.)*([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[\\-0-9\\xB7]))?)?:"
+   (return (values 'pname_ns $@)))
   ;; [141s] BLANK_NODE_LABEL ::= '_:' (PN_CHARS_U | [0-9]) ((PN_CHARS | '.')* PN_CHARS)?
   ;; [144s] LANGTAG ::= '@' [a-zA-Z]+ ('-' [a-zA-Z0-9]+)*
   ;; [19] INTEGER ::= [+-]? [0-9]+
@@ -106,14 +112,67 @@ RFCs as described in <https://www.rfc-editor.org/rfc/rfc3986#appendix-D>."
 
 
 ;;
+;; Prefixed names
+;;
+(defvar *namespace* nil
+  "An alist containing the known prefixes.")
+
+(defun define-prefix (prefix iri)
+  "Define a URI as expansion for PREFIX."
+  (push (cons prefix (quri:uri iri)) *namespace*))
+
+(define-condition prefix-expand-error (cl-ttl-parser-error)
+  ((prefix :initarg :prefix :reader prefix-expand-error-prefix))
+  (:report (lambda (e stream)
+             (format stream
+                     "Could not expand the prefix \"~A\"~%Known prefixes: ~{~A~^, ~}"
+                     (prefix-expand-error-prefix e)
+                     (mapcar #'car *namespace*))))
+  (:documentation "Error signalled when a prefix cannot be expanded during parsing."))
+
+(defun expand-prefix (prefix)
+  "Return the expansion defined for PREFIX."
+  (let ((entry (assoc prefix *namespace* :test #'string=)))
+    (if entry
+        (cdr entry)
+        (error 'prefix-expand-error :prefix prefix))))
+
+(defun split-prefixed-name (pname)
+  "Split a prefixed name into its prefix, including colon, and local name."
+  (let* ((colon-pos (position #\: pname))
+         (pos-after-colon (1+ colon-pos)))
+    (cons (subseq pname 0 pos-after-colon) (subseq pname pos-after-colon))))
+
+(defun expand-prefixed-name (pname)
+  "Expand the prefix in PNAME to its corresponding iri."
+  (let* ((split (split-prefixed-name pname))
+         (prefix-exp (quri:render-uri (expand-prefix (car split)))))
+    (concatenate 'string prefix-exp (cdr split))))
+
+(defun unescpace-reserved-characters (str)
+  "Unescape any escaped reserved characters in STR.
+
+See <https://www.w3.org/TR/turtle/#sec-escapes>"
+  (cl-ppcre:regex-replace-all "\\\\([~\\.\\-!$&'()*+,;=/?#@%_])" str "\\1"))
+
+(defun parse-prefixed-name (pname)
+  "Parse a prefixed name PNAME to corresponding its absolute iri.
+
+The prefix in PNAME is expanded to its corresponding iri.  If expanding PNAME results in a relative
+iri it will be resolved against the current `*base*'."
+  (let ((expanded-pname (expand-prefixed-name pname)))
+    (resolve-iri (unescpace-reserved-characters expanded-pname))))
+
+
+;;
 ;; Parser
 ;;
 (yacc:define-parser *ttl-parser*
   (:start-symbol turtleDoc)
   (:terminals ( |a|
                 |.| |,| |;|
-                |@base| |spBase|
-                iriref))
+                |@prefix| |@base| |spBase| |spPrefix|
+                iriref pname_ns pname_ln))
   (:precedence nil)
 
   ;; [1] turtleDoc ::= statement*
@@ -131,11 +190,17 @@ RFCs as described in <https://www.rfc-editor.org/rfc/rfc3986#appendix-D>."
                 tr)))
   ;; [3] directive ::= prefixID | base | sparqlPrefix | sparqlBase
   (directive
-   ;; prefixID
+   prefixID
    base
-  ;;  sparqlPrefix
+   sparqlPrefix
    sparqlBase)
   ;; [4] prefixID ::= '@prefix' PNAME_NS IRIREF '.'
+  (prefixID
+   (|@prefix| pname_ns iriref |.|
+              #'(lambda (k pre uri d)
+                  (declare (ignore k d))
+                  (define-prefix pre uri)
+                  nil)))
   ;; [5] base ::= '@base' IRIREF '.'
   (base
    (|@base| iriref |.|
@@ -151,6 +216,12 @@ RFCs as described in <https://www.rfc-editor.org/rfc/rfc3986#appendix-D>."
                  (set-base-uri i)
                  nil)))
   ;; [6s] sparqlPrefix ::= "PREFIX" PNAME_NS IRIREF
+  (sparqlPrefix
+   (|spPrefix| pname_ns iriref
+               #'(lambda (k pre uri)
+                  (declare (ignore k))
+                  (define-prefix pre uri)
+                  nil)))
   ;; [6] triples ::= subject predicateObjectList | blankNodePropertyList predicateObjectList?
   (triples
    (subject predicateObjectList
@@ -220,9 +291,13 @@ RFCs as described in <https://www.rfc-editor.org/rfc/rfc3986#appendix-D>."
   ;; [135s] iri ::= IRIREF | PrefixedName
   (iri
    (iriref #'(lambda (i) (resolve-iri i)))
-   ;; PrefixedName
-   )
+   PrefixedName)
   ;; [136s] PrefixedName ::= PNAME_LN | PNAME_NS
+  (PrefixedName
+   (pname_ln
+    #'(lambda (pname-ln) (parse-prefixed-name pname-ln)))
+   (pname_ns
+    #'(lambda (pname-ns) (parse-prefixed-name pname-ns))))
   ;; [137s] BlankNode ::= BLANK_NODE_LABEL | ANON
   )
 
@@ -236,4 +311,5 @@ RFCs as described in <https://www.rfc-editor.org/rfc/rfc3986#appendix-D>."
 INITIAL-BASE is used to resolve relative IRIs encountered before a base is explicitly set in the
 STRING.  This includes relative IRIs set as base before any other absolute base is set."
   (let ((*base-uri* initial-base))
-    (yacc:parse-with-lexer (ttl-lexer string) *ttl-parser*)))
+        (*namespace* nil))
+    (yacc:parse-with-lexer (ttl-lexer string) *ttl-parser*))
