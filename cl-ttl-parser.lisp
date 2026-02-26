@@ -4,7 +4,14 @@
 ;; Lexer
 ;;
 (cl-lex:define-string-lexer ttl-lexer
+  ("\\;+"
+   (return (values '|;| '|;|)))
+  ("\\,"
+   (return (values '|,| '|,|)))
+
   ;; [18] IRIREF ::= '<' ([^#x00-#x20<>"{}|^`\] | UCHAR)* '>' /* #x00=NULL #01-#x1F=control codes #x20=space */
+  ("<(([^<>\"{}|^`\\x00-\\x20\\\\]|\\\\u[0-9A-Fa-f]{4}|\\\\U[0-9A-Fa-f]{8})*)>"
+   (return (values 'iriref $1)))
   ;; [139s] PNAME_NS ::= PN_PREFIX? ':'
   ;; [140s] PNAME_LN ::= PNAME_NS PN_LOCAL
   ;; [141s] BLANK_NODE_LABEL ::= '_:' (PN_CHARS_U | [0-9]) ((PN_CHARS | '.')* PN_CHARS)?
@@ -30,7 +37,12 @@
   ;; [170s] PERCENT ::= '%' HEX HEX
   ;; [171s] HEX ::= [0-9] | [A-F] | [a-f]
   ;; [172s] PN_LOCAL_ESC ::= '\' ('_' | '~' | '.' | '-' | '!' | '$' | '&' | "'" | '(' | ')' | '*' | '+' | ',' | ';' | '=' | '/' | '?' | '#' | '@' | '%')
-  )
+
+  ;; Other
+  ("\\."
+   (return (values '|.| '|.|)))
+  ("a"
+   (return (values '|a| (quri:uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")))))
 
 
 ;;
@@ -38,23 +50,88 @@
 ;;
 (yacc:define-parser *ttl-parser*
   (:start-symbol turtleDoc)
-  (:terminals ())
+  (:terminals ( |a|
+                |.| |,| |;|
+                iriref))
   (:precedence nil)
 
   ;; [1] turtleDoc ::= statement*
+  (turtleDoc
+   nil
+   (turtleDoc statement
+              #'(lambda (td s)
+                  (nconc td s))))
   ;; [2] statement ::= directive | triples '.'
+  (statement
+   ;; directive
+   (triples |.|
+            #'(lambda (tr d)
+                (declare (ignore d))
+                tr)))
   ;; [3] directive ::= prefixID | base | sparqlPrefix | sparqlBase
   ;; [4] prefixID ::= '@prefix' PNAME_NS IRIREF '.'
   ;; [5] base ::= '@base' IRIREF '.'
   ;; [5s] sparqlBase ::= "BASE" IRIREF
   ;; [6s] sparqlPrefix ::= "PREFIX" PNAME_NS IRIREF
   ;; [6] triples ::= subject predicateObjectList | blankNodePropertyList predicateObjectList?
+  (triples
+   (subject predicateObjectList
+            ;; s1 p1 o1 . = (s1 p1 o1)
+            ;; s1 p1 o1 ; p2 o2 . = ((s1 p1 o1) (s1 p2 o2))
+            ;; s1 p1 o1 , o2 . = ((s1 p1 o1) (s1 p1 o2))
+            #'(lambda (s pol)
+                (mapcar #'(lambda (po)
+                            (list s (car po) (cadr po)))
+                        pol)))
+   ;;  blankNodePropertyList predicateObjectList?
+   )
   ;; [7] predicateObjectList ::= verb objectList (';' (verb objectList)?)*
+  (predicateObjectList
+   (verb objectList
+         #'(lambda (v ol)
+             (mapcar #'(lambda (o)
+                         (list v o))
+                     ol)))
+   (verb objectList |;| predicateObjectList?
+         #'(lambda (v ol sc pol)
+             (declare (ignore sc))
+             (concatenate
+              'list
+              (mapcar #'(lambda (o)
+                          (list v o))
+                      ol)
+              pol))))
+  (predicateObjectList?
+   nil
+   predicateObjectList)
   ;; [8] objectList ::= object (',' object)*
+  (objectList
+   (object)
+   (object |,| objectList
+           #'(lambda (o c ol)
+               (declare (ignore c))
+               (push o ol))))
   ;; [9] verb ::= predicate | 'a'
+  (verb
+   predicate
+   |a|)
   ;; [10] subject ::= iri | BlankNode | collection
+  (subject
+   iri
+   ;; BlankNode
+   ;; collection
+   )
   ;; [11] predicate ::= iri
+  (predicate
+   iri)
   ;; [12] object ::= iri | BlankNode | collection | blankNodePropertyList | literal
+  (object
+   iri
+   ;; BlankNode
+   ;; collection
+   ;; blankNodePropertyList
+   ;; literal
+   )
   ;; [13] literal ::= RDFLiteral | NumericLiteral | BooleanLiteral
   ;; [14] blankNodePropertyList ::= '[' predicateObjectList ']'
   ;; [15] collection ::= '(' object* ')'
