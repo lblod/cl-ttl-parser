@@ -34,6 +34,8 @@
   ("([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8](([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[\\-0-9\\xB7]|\\.)*([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[\\-0-9\\xB7]))?)?:"
    (return (values 'pname_ns $@)))
   ;; [141s] BLANK_NODE_LABEL ::= '_:' (PN_CHARS_U | [0-9]) ((PN_CHARS | '.')* PN_CHARS)?
+  ("_:([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[0-9])(([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[\\-0-9\\xB7]|\\.)*([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[\\-0-9\\xB7]))?"
+   (return (values 'blank-node-label $@)))
   ;; [144s] LANGTAG ::= '@' [a-zA-Z]+ ('-' [a-zA-Z0-9]+)*
   ;; [19] INTEGER ::= [+-]? [0-9]+
   ;; [20] DECIMAL ::= [+-]? [0-9]* '.' [0-9]+
@@ -47,6 +49,8 @@
   ;; [159s] ECHAR ::= '\' [tbnrf"'\]
   ;; [161s] WS ::= #x20 | #x9 | #xD | #xA /* #x20=space #x9=character tabulation #xD=carriage return #xA=new line */
   ;; [162s] ANON ::= '[' WS* ']'
+  ("\\[[\\x20\\x9\\xD\\xA]*\\]"
+   (return (values 'anon 'anon)))
   ;; [163s] PN_CHARS_BASE ::= [A-Z] | [a-z] | [#x00C0-#x00D6] | [#x00D8-#x00F6] | [#x00F8-#x02FF] | [#x0370-#x037D] | [#x037F-#x1FFF] | [#x200C-#x200D] | [#x2070-#x218F] | [#x2C00-#x2FEF] | [#x3001-#xD7FF] | [#xF900-#xFDCF] | [#xFDF0-#xFFFD] | [#x10000-#xEFFFF]
   ;; [164s] PN_CHARS_U ::= PN_CHARS_BASE | '_'
   ;; [166s] PN_CHARS ::= PN_CHARS_U | '-' | [0-9] | #x00B7 | [#x0300-#x036F] | [#x203F-#x2040]
@@ -165,6 +169,35 @@ iri it will be resolved against the current `*base*'."
 
 
 ;;
+;; Blank nodes
+;;
+(defvar *bnode-labels* nil
+  "A list of known blank node labels.")
+
+(defparameter *bnode-counter* 0
+  "Counter used to assign unique labels to anonymous nodes.")
+
+(defparameter *bnode-id* ""
+  "A unique id used to construct the label for all blank nodes in a graph.")
+
+(defun add-bnode (&optional label)
+  "Add a new blank node to *bnode-labels* and return it.
+
+If LABEL is nil, generate the next unique label and add it to `*bnode-labels'.
+If LABEL is non-nil and does not yet exist, add it to `*bnode-labels'."
+  (unless label
+    (progn
+      (setf label (concatenate 'string
+                               "bnode-"
+                               *bnode-id*
+                               "-"
+                               (write-to-string (incf *bnode-counter*))))))
+  (unless (member label *bnode-labels*)
+    (push label *bnode-labels*))
+  label)
+
+
+;;
 ;; Parser
 ;;
 (yacc:define-parser *ttl-parser*
@@ -172,7 +205,7 @@ iri it will be resolved against the current `*base*'."
   (:terminals ( |a|
                 |.| |,| |;|
                 |@prefix| |@base| |spBase| |spPrefix|
-                iriref pname_ns pname_ln))
+                iriref pname_ns pname_ln blank-node-label anon))
   (:precedence nil)
 
   ;; [1] turtleDoc ::= statement*
@@ -267,7 +300,7 @@ iri it will be resolved against the current `*base*'."
   ;; [10] subject ::= iri | BlankNode | collection
   (subject
    iri
-   ;; BlankNode
+   BlankNode
    ;; collection
    )
   ;; [11] predicate ::= iri
@@ -276,7 +309,7 @@ iri it will be resolved against the current `*base*'."
   ;; [12] object ::= iri | BlankNode | collection | blankNodePropertyList | literal
   (object
    iri
-   ;; BlankNode
+   BlankNode
    ;; collection
    ;; blankNodePropertyList
    ;; literal
@@ -290,7 +323,8 @@ iri it will be resolved against the current `*base*'."
   ;; [17] String ::= STRING_LITERAL_QUOTE | STRING_LITERAL_SINGLE_QUOTE | STRING_LITERAL_LONG_SINGLE_QUOTE | STRING_LITERAL_LONG_QUOTE
   ;; [135s] iri ::= IRIREF | PrefixedName
   (iri
-   (iriref #'(lambda (i) (resolve-iri i)))
+   (iriref
+    #'(lambda (i) (resolve-iri i)))
    PrefixedName)
   ;; [136s] PrefixedName ::= PNAME_LN | PNAME_NS
   (PrefixedName
@@ -299,7 +333,13 @@ iri it will be resolved against the current `*base*'."
    (pname_ns
     #'(lambda (pname-ns) (parse-prefixed-name pname-ns))))
   ;; [137s] BlankNode ::= BLANK_NODE_LABEL | ANON
-  )
+  (BlankNode
+   (blank-node-label
+    #'(lambda (l) (add-bnode l)))
+   (anon
+    #'(lambda (l)
+        (declare (ignore l)) ; NOTE (02/03/2026): Ignore `anon' terminal
+        (add-bnode)))))
 
 
 ;;
@@ -310,6 +350,11 @@ iri it will be resolved against the current `*base*'."
 
 INITIAL-BASE is used to resolve relative IRIs encountered before a base is explicitly set in the
 STRING.  This includes relative IRIs set as base before any other absolute base is set."
-  (let ((*base-uri* initial-base))
-        (*namespace* nil))
-    (yacc:parse-with-lexer (ttl-lexer string) *ttl-parser*))
+  (let ((*base-uri* initial-base)
+        (*namespace* nil)
+        (*bnode-labels* nil)
+        (*bnode-counter* 0)
+        ;; NOTE (03/03/2026): Using `random' here to avoid dragging in UUID generators and their
+        ;; dependencies.
+        (*bnode-id* (write-to-string (random 99999))))
+    (yacc:parse-with-lexer (ttl-lexer string) *ttl-parser*)))
