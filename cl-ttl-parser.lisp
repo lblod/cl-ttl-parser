@@ -13,6 +13,8 @@
    (return (values '|;| '|;|)))
   ("\\,"
    (return (values '|,| '|,|)))
+  ("\\^\\^"
+   (return (values '|^^| '|^^|)))
   ("@base"
    (return (values '|@base| '|@base|)))
   ;; NOTE (09/03/2026): `cl-lex' does not seem to be able to handle a `?i' in the regex, using this dirty way to support case-insensitive sparqlBase.
@@ -37,14 +39,24 @@
   ("_:([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[0-9])(([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[\\-0-9\\xB7]|\\.)*([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[\\-0-9\\xB7]))?"
    (return (values 'blank-node-label $@)))
   ;; [144s] LANGTAG ::= '@' [a-zA-Z]+ ('-' [a-zA-Z0-9]+)*
+  ("@([a-zA-Z]+(-[a-zA-Z0-9]+)*)"
+   (return (values 'langtag $1)))
   ;; [19] INTEGER ::= [+-]? [0-9]+
   ;; [20] DECIMAL ::= [+-]? [0-9]* '.' [0-9]+
   ;; [21] DOUBLE ::= [+-]? ([0-9]+ '.' [0-9]* EXPONENT | '.' [0-9]+ EXPONENT | [0-9]+ EXPONENT)
   ;; [154s] EXPONENT ::= [eE] [+-]? [0-9]+
-  ;; [22] STRING_LITERAL_QUOTE ::= '"' ([^#x22#x5C#xA#xD] | ECHAR | UCHAR)* '"' /* #x22=" #x5C=\ #xA=new line #xD=carriage return */
-  ;; [23] STRING_LITERAL_SINGLE_QUOTE ::= "'" ([^#x27#x5C#xA#xD] | ECHAR | UCHAR)* "'" /* #x27=' #x5C=\ #xA=new line #xD=carriage return */
-  ;; [24] STRING_LITERAL_LONG_SINGLE_QUOTE ::= "'''" (("'" | "''")? ([^'\] | ECHAR | UCHAR))* "'''"
   ;; [25] STRING_LITERAL_LONG_QUOTE ::= '"""' (('"' | '""')? ([^"\] | ECHAR | UCHAR))* '"""'
+  ("\"\"\"(((\"|\"\")?([^\"\\\\]|\\\\[tbnrf\"'\\\\]|\\\\u[0-9A-Fa-f]{4}|\\\\U[0-9A-Fa-f]{8}))*)\"\"\""
+   (return (values '|string-literal-long-quote| $1)))
+  ;; [22] STRING_LITERAL_QUOTE ::= '"' ([^#x22#x5C#xA#xD] | ECHAR | UCHAR)* '"' /* #x22=" #x5C=\ #xA=new line #xD=carriage return */
+  ("\"(([^\\x22\\x5C\\xA\\xD]|\\\\[tbnrf\"'\\\\]|\\\\u[0-9A-Fa-f]{4}|\\\\U[0-9A-Fa-f]{8})*)\""
+   (return (values '|string-literal-quote| $1)))
+  ;; [24] STRING_LITERAL_LONG_SINGLE_QUOTE ::= "'''" (("'" | "''")? ([^'\] | ECHAR | UCHAR))* "'''"
+  ("'''((('|'')?([^'\\\\]|\\\\[tbnrf\"'\\\\]|\\\\u[0-9A-Fa-f]{4}|\\\\U[0-9A-Fa-f]{8}))*)'''"
+   (return (values '|string-literal-long-single-quote| $1)))
+  ;; [23] STRING_LITERAL_SINGLE_QUOTE ::= "'" ([^#x27#x5C#xA#xD] | ECHAR | UCHAR)* "'" /* #x27=' #x5C=\ #xA=new line #xD=carriage return */
+  ("'(([^\\x27\\x5C\\xA\\xD]|\\\\[tbnrf\"'\\\\]|\\\\u[0-9A-Fa-f]{4}|\\\\U[0-9A-Fa-f]{8})*)'"
+   (return (values '|string-literal-single-quote| $1)))
   ;; [26] UCHAR ::= '\u' HEX HEX HEX HEX | '\U' HEX HEX HEX HEX HEX HEX HEX HEX
   ;; [159s] ECHAR ::= '\' [tbnrf"'\]
   ;; [161s] WS ::= #x20 | #x9 | #xD | #xA /* #x20=space #x9=character tabulation #xD=carriage return #xA=new line */
@@ -198,14 +210,51 @@ If LABEL is non-nil and does not yet exist, add it to `*bnode-labels'."
 
 
 ;;
+;; RDF Literals
+;;
+(defstruct (rdf-literal (:constructor make-rdf-literal*))
+  (value "" :type (or string null))
+  (lang nil :type (or null string))
+  (datatype nil :type (or null quri:uri)))
+
+(define-condition rdf-literal-error (cl-ttl-parser-error)
+  ((value :initarg :value :reader rdf-literal-error-value)
+   (lang :initarg :lang :reader rdf-literal-error-lang)
+   (datatype :initarg :datatype :reader rdf-literal-error-datatype))
+  (:report (lambda (e stream)
+             (format
+              stream
+              "An RDF literal \"~A\" cannot have both a language tag \"~A\" and a datatype iri \"~A\""
+              (rdf-literal-error-value e)
+              (rdf-literal-error-lang e)
+              (rdf-literal-error-datatype e))))
+  (:documentation "Error thrown when an error is encountered when constructing an RDF literal."))
+
+(defun make-rdf-literal (&key value lang datatype)
+  "Constructs a new RDF literal object.
+
+If DATATYPE is non-nil it converted to a `quri:uri' if necessary."
+  (if (and lang datatype)
+      ;; NOTE (20/03/2026): This is an extra check, the parser itself should already signal an error
+      ;; when the input being parsed contains both elements.
+      (error 'rdf-literal-error :value value :lang lang :datatype datatype))
+  (when (and datatype (not (quri:uri-p datatype)))
+    ;; TODO: Handle potential errors from quri?
+    (setf datatype (quri:uri datatype)))
+  (make-rdf-literal* :value value :lang lang :datatype datatype))
+
+
+;;
 ;; Parser
 ;;
 (yacc:define-parser *ttl-parser*
   (:start-symbol turtleDoc)
   (:terminals ( |a|
-                |.| |,| |;|
+                |.| |,| |;| |^^|
                 |@prefix| |@base| |spBase| |spPrefix|
-                iriref pname_ns pname_ln blank-node-label anon))
+                iriref pname_ns pname_ln blank-node-label anon
+                langtag
+                |string-literal-quote| |string-literal-single-quote| |string-literal-long-single-quote| |string-literal-long-quote|))
   (:precedence nil)
 
   ;; [1] turtleDoc ::= statement*
@@ -312,15 +361,35 @@ If LABEL is non-nil and does not yet exist, add it to `*bnode-labels'."
    BlankNode
    ;; collection
    ;; blankNodePropertyList
-   ;; literal
-   )
+   literal)
   ;; [13] literal ::= RDFLiteral | NumericLiteral | BooleanLiteral
+  (literal
+   RDFLiteral
+   ;; NumericLiteral
+   ;; BooleanLiteral
+   )
   ;; [14] blankNodePropertyList ::= '[' predicateObjectList ']'
   ;; [15] collection ::= '(' object* ')'
   ;; [16] NumericLiteral ::= INTEGER | DECIMAL | DOUBLE
   ;; [128s] RDFLiteral ::= String (LANGTAG | '^^' iri)?
+  (RDFLiteral
+   (String
+    #'(lambda (s)
+        (make-rdf-literal :value s)))
+   (String langtag
+           #'(lambda (s lt)
+               (make-rdf-literal :value s :lang lt)))
+   (String |^^| iri
+           #'(lambda (s d i)
+               (declare (ignore d))
+               (make-rdf-literal :value s :datatype i))))
   ;; [133s] BooleanLiteral ::= 'true' | 'false'
   ;; [17] String ::= STRING_LITERAL_QUOTE | STRING_LITERAL_SINGLE_QUOTE | STRING_LITERAL_LONG_SINGLE_QUOTE | STRING_LITERAL_LONG_QUOTE
+  (String
+   |string-literal-quote|
+   |string-literal-single-quote|
+   |string-literal-long-single-quote|
+   |string-literal-long-quote|)
   ;; [135s] iri ::= IRIREF | PrefixedName
   (iri
    (iriref
