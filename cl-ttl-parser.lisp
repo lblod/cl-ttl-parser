@@ -1,7 +1,10 @@
 (in-package #:cl-ttl-parser)
 
 (defparameter xsd-types-plist
-  '(:boolean "http://www.w3.org/2001/XMLSchema#boolean")
+  '(:boolean "http://www.w3.org/2001/XMLSchema#boolean"
+    :decimal "http://www.w3.org/2001/XMLSchema#decimal"
+    :double "http://www.w3.org/2001/XMLSchema#double"
+    :integer "http://www.w3.org/2001/XMLSchema#integer")
   "A plist containing the URIs for xsd data types.")
 
 (define-condition cl-ttl-parser-error (simple-error)
@@ -49,10 +52,16 @@
   ;; [144s] LANGTAG ::= '@' [a-zA-Z]+ ('-' [a-zA-Z0-9]+)*
   ("@([a-zA-Z]+(-[a-zA-Z0-9]+)*)"
    (return (values 'langtag $1)))
-  ;; [19] INTEGER ::= [+-]? [0-9]+
-  ;; [20] DECIMAL ::= [+-]? [0-9]* '.' [0-9]+
   ;; [21] DOUBLE ::= [+-]? ([0-9]+ '.' [0-9]* EXPONENT | '.' [0-9]+ EXPONENT | [0-9]+ EXPONENT)
+  ("[+-]?([0-9]+\\.[0-9]*[eE][+-]?[0-9]+|\\.[0-9]+[eE][+-]?[0-9]+|[0-9]+[eE][+-]?[0-9]+)"
+   (return (values 'double $@)))
   ;; [154s] EXPONENT ::= [eE] [+-]? [0-9]+
+  ;; [20] DECIMAL ::= [+-]? [0-9]* '.' [0-9]+
+  ("[+-]?[0-9]*\\.[0-9]+"
+   (return (values 'decimal $@)))
+  ;; [19] INTEGER ::= [+-]? [0-9]+
+  ("[+-]?[0-9]+"
+   (return (values 'integer $@)))
   ;; [25] STRING_LITERAL_LONG_QUOTE ::= '"""' (('"' | '""')? ([^"\] | ECHAR | UCHAR))* '"""'
   ("\"\"\"(((\"|\"\")?([^\"\\\\]|\\\\[tbnrf\"'\\\\]|\\\\u[0-9A-Fa-f]{4}|\\\\U[0-9A-Fa-f]{8}))*)\"\"\""
    (return (values '|string-literal-long-quote| $1)))
@@ -262,6 +271,7 @@ If DATATYPE is non-nil it converted to a `quri:uri' if necessary."
                 |@prefix| |@base| |spBase| |spPrefix|
                 iriref pname_ns pname_ln blank-node-label anon
                 |true| |false|
+                integer decimal double
                 langtag
                 |string-literal-quote| |string-literal-single-quote| |string-literal-long-single-quote| |string-literal-long-quote|))
   (:precedence nil)
@@ -374,11 +384,21 @@ If DATATYPE is non-nil it converted to a `quri:uri' if necessary."
   ;; [13] literal ::= RDFLiteral | NumericLiteral | BooleanLiteral
   (literal
    RDFLiteral
-   ;; NumericLiteral
+   NumericLiteral
    BooleanLiteral)
   ;; [14] blankNodePropertyList ::= '[' predicateObjectList ']'
   ;; [15] collection ::= '(' object* ')'
   ;; [16] NumericLiteral ::= INTEGER | DECIMAL | DOUBLE
+  (NumericLiteral
+   (integer
+    #'(lambda (int)
+        (make-rdf-literal :value int :datatype (getf xsd-types-plist :integer))))
+   (decimal
+    #'(lambda (int)
+        (make-rdf-literal :value int :datatype (getf xsd-types-plist :decimal))))
+   (double
+    #'(lambda (int)
+        (make-rdf-literal :value int :datatype (getf xsd-types-plist :double)))))
   ;; [128s] RDFLiteral ::= String (LANGTAG | '^^' iri)?
   (RDFLiteral
    (String
