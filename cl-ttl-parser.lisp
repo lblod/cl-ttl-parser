@@ -1,5 +1,9 @@
 (in-package #:cl-ttl-parser)
 
+(defparameter xsd-types-plist
+  '(:boolean "http://www.w3.org/2001/XMLSchema#boolean")
+  "A plist containing the URIs for xsd data types.")
+
 (define-condition cl-ttl-parser-error (simple-error)
   ()
   (:documentation "General error for use in TTL parsing.  Can be instantiated for extra information."))
@@ -25,6 +29,10 @@
   ;; NOTE (09/03/2026): See comment sparqlBase.
   ("[Pp][Rr][Ee][Ff][Ii][Xx]"
    (return (values '|spPrefix| '|spPrefix|)))
+  ("true"
+   (return (values '|true| t)))
+  ("false"
+   (return (values '|false| nil)))
 
   ;; [18] IRIREF ::= '<' ([^#x00-#x20<>"{}|^`\] | UCHAR)* '>' /* #x00=NULL #01-#x1F=control codes #x20=space */
   ("<(([^<>\"{}|^`\\x00-\\x20\\\\]|\\\\u[0-9A-Fa-f]{4}|\\\\U[0-9A-Fa-f]{8})*)>"
@@ -253,6 +261,7 @@ If DATATYPE is non-nil it converted to a `quri:uri' if necessary."
                 |.| |,| |;| |^^|
                 |@prefix| |@base| |spBase| |spPrefix|
                 iriref pname_ns pname_ln blank-node-label anon
+                |true| |false|
                 langtag
                 |string-literal-quote| |string-literal-single-quote| |string-literal-long-single-quote| |string-literal-long-quote|))
   (:precedence nil)
@@ -366,8 +375,7 @@ If DATATYPE is non-nil it converted to a `quri:uri' if necessary."
   (literal
    RDFLiteral
    ;; NumericLiteral
-   ;; BooleanLiteral
-   )
+   BooleanLiteral)
   ;; [14] blankNodePropertyList ::= '[' predicateObjectList ']'
   ;; [15] collection ::= '(' object* ')'
   ;; [16] NumericLiteral ::= INTEGER | DECIMAL | DOUBLE
@@ -384,6 +392,15 @@ If DATATYPE is non-nil it converted to a `quri:uri' if necessary."
                (declare (ignore d))
                (make-rdf-literal :value s :datatype i))))
   ;; [133s] BooleanLiteral ::= 'true' | 'false'
+  (BooleanLiteral
+   (|true|
+    #'(lambda (tr)
+        (declare (ignorable tr))
+        (make-rdf-literal :value "true" :datatype (getf xsd-types-plist :boolean))))
+   (|false|
+    #'(lambda (f)
+        (declare (ignorable f))
+        (make-rdf-literal :value "false" :datatype (getf xsd-types-plist :boolean)))))
   ;; [17] String ::= STRING_LITERAL_QUOTE | STRING_LITERAL_SINGLE_QUOTE | STRING_LITERAL_LONG_SINGLE_QUOTE | STRING_LITERAL_LONG_QUOTE
   (String
    |string-literal-quote|
