@@ -95,6 +95,12 @@
    (return (values '|.| '|.|)))
   ("a"
    (return (values '|a| (quri:uri "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))))
+  ;; NOTE (11/03/2026): Needs to be after ANON, otherwise the square bracket for an anonymous blank
+  ;; node is interpreted as a terminal.
+  ("\\["
+   (return (values '|[| '|[|)))
+  ("\\]"
+   (return (values '|]| '|]|)))
 
   ;; Comments
   ("#[^\\xA\\xD]*"))
@@ -268,6 +274,7 @@ If DATATYPE is non-nil it converted to a `quri:uri' if necessary."
   (:start-symbol turtleDoc)
   (:terminals ( |a|
                 |.| |,| |;| |^^|
+                |[| |]|
                 |@prefix| |@base| |spBase| |spPrefix|
                 iriref pname_ns pname_ln blank-node-label anon
                 |true| |false|
@@ -329,12 +336,27 @@ If DATATYPE is non-nil it converted to a `quri:uri' if necessary."
             ;; s1 p1 o1 . = (s1 p1 o1)
             ;; s1 p1 o1 ; p2 o2 . = ((s1 p1 o1) (s1 p2 o2))
             ;; s1 p1 o1 , o2 . = ((s1 p1 o1) (s1 p1 o2))
-            #'(lambda (s pol)
-                (mapcar #'(lambda (po)
-                            (list s (car po) (cadr po)))
-                        pol)))
-   ;;  blankNodePropertyList predicateObjectList?
-   )
+            ;;
+            ;; s1 p1 [ ip1 io1 ] . = ((s1 p1 BNODE) (BNODE ip1 io1))
+            ;; s1 p1 [ ip1 io1 ; ip2 io2 ] . = ((s1 p1 BNODE) (BNODE ip1 io1) (BNODE ip2 io2))
+            ;; s1 p1 [ ip1 [ ip2 io2 ] ] . = ((s1 p1 BNODE1) (BNODE1 ip1 BNODE2) (BNODE2 ip2 io2))
+            #'(lambda (subj pol)
+                (nconc ()
+                       (loop for (pred obj) in pol
+                             collect (list subj pred (if (listp obj)
+                                                      (caar obj)
+                                                      obj))
+                             if (listp obj) append obj))))
+   ;; [ p1 o1 ] . = ((BNODE1 p1 o1))
+   ;; [ p1 o1 ] p2 o2 = ((BNODE1 p1 o1) (BNODE1 p2 o2))
+   (blankNodePropertyList predicateObjectList?
+                          #'(lambda (bpl pol)
+                              (let ((subj (caar bpl)))
+                                (nconc bpl
+                                       (loop for (pred obj) in pol
+                                             collect (list subj pred (if (listp obj)
+                                                                         (caar obj)
+                                                                         obj))))))))
   ;; [7] predicateObjectList ::= verb objectList (';' (verb objectList)?)*
   (predicateObjectList
    (verb objectList
@@ -345,8 +367,7 @@ If DATATYPE is non-nil it converted to a `quri:uri' if necessary."
    (verb objectList |;| predicateObjectList?
          #'(lambda (v ol sc pol)
              (declare (ignore sc))
-             (concatenate
-              'list
+             (nconc
               (mapcar #'(lambda (o)
                           (list v o))
                       ol)
@@ -379,7 +400,7 @@ If DATATYPE is non-nil it converted to a `quri:uri' if necessary."
    iri
    BlankNode
    ;; collection
-   ;; blankNodePropertyList
+   blankNodePropertyList
    literal)
   ;; [13] literal ::= RDFLiteral | NumericLiteral | BooleanLiteral
   (literal
@@ -387,6 +408,17 @@ If DATATYPE is non-nil it converted to a `quri:uri' if necessary."
    NumericLiteral
    BooleanLiteral)
   ;; [14] blankNodePropertyList ::= '[' predicateObjectList ']'
+  (blankNodePropertyList
+   (|[| predicateObjectList |]|
+        #'(lambda (ob pol cb)
+            (declare (ignore ob cb))
+            (let ((bnode (add-bnode)))
+              (nconc ()
+                     (loop for (pred obj) in pol
+                           collect (list bnode pred (if (listp obj)
+                                                        (caar obj)
+                                                        obj))
+                           if (listp obj) append obj))))))
   ;; [15] collection ::= '(' object* ')'
   ;; [16] NumericLiteral ::= INTEGER | DECIMAL | DOUBLE
   (NumericLiteral
