@@ -7,6 +7,12 @@
     :integer "http://www.w3.org/2001/XMLSchema#integer")
   "A plist containing the URIs for xsd data types.")
 
+(defparameter rdfs-plist
+  '(:first "http://www.w3.org/1999/02/22-rdf-syntax-ns#first"
+    :nil "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"
+    :rest "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest")
+  "A plist containing the URIS for rdfs elements.")
+
 (define-condition cl-ttl-parser-error (simple-error)
   ()
   (:documentation "General error for use in TTL parsing.  Can be instantiated for extra information."))
@@ -36,6 +42,10 @@
    (return (values '|true| t)))
   ("false"
    (return (values '|false| nil)))
+  ("\\("
+   (return (values '|(| '|(|)))
+  ("\\)"
+   (return (values '|)| '|)|)))
 
   ;; [18] IRIREF ::= '<' ([^#x00-#x20<>"{}|^`\] | UCHAR)* '>' /* #x00=NULL #01-#x1F=control codes #x20=space */
   ("<(([^<>\"{}|^`\\x00-\\x20\\\\]|\\\\u[0-9A-Fa-f]{4}|\\\\U[0-9A-Fa-f]{8})*)>"
@@ -274,7 +284,7 @@ If DATATYPE is non-nil it converted to a `quri:uri' if necessary."
   (:start-symbol turtleDoc)
   (:terminals ( |a|
                 |.| |,| |;| |^^|
-                |[| |]|
+                |[| |]| |(| |)|
                 |@prefix| |@base| |spBase| |spPrefix|
                 iriref pname_ns pname_ln blank-node-label anon
                 |true| |false|
@@ -340,13 +350,25 @@ If DATATYPE is non-nil it converted to a `quri:uri' if necessary."
             ;; s1 p1 [ ip1 io1 ] . = ((s1 p1 BNODE) (BNODE ip1 io1))
             ;; s1 p1 [ ip1 io1 ; ip2 io2 ] . = ((s1 p1 BNODE) (BNODE ip1 io1) (BNODE ip2 io2))
             ;; s1 p1 [ ip1 [ ip2 io2 ] ] . = ((s1 p1 BNODE1) (BNODE1 ip1 BNODE2) (BNODE2 ip2 io2))
+            ;;
+            ;; s1 p1 [ ip1 [ ip2 io2 ] ] . = ((s1 p1 BNODE1) (BNODE1 ip1 BNODE2) (BNODE2 ip2 io2))
+            ;;
+            ;; s1 p1 ( o1 o2 ) . = ((s1 p1 BNODE1) (BNODE1 rdf:first o1) (BNODE1 rdf:rest BNODE2)
+            ;;                                     (BNODE2 rdf:first o2) (BNODE2 rdf:rest rdf:nil))
+            ;; s1 p1 ( o1 ( o11 o12 ) ) . = ((s1 p1 BNODE1) (BNODE1 rdf:first o1) (BNODE1 rdf:rest BNODE2)
+            ;;                                              (BNODE2 rdf:first BNODE3) (BNODE2 rdf:rest rdf:nil)
+            ;;                                              (BNODE3 rdf:first o11) (BNODE3 rdf:rest BNODE4)
+            ;;                                              (BNODE4 rdf:first o12) (BNODE4 rdf:rest rdf:nil))
+            ;; ( s1 s2 ) p1 o1 . = ((BNODE1 p1 o1) (BNODE1 rdf:first s1) (BNODE1 rdf:rest BNODE2)
+            ;;                      (BNODE2 rdf:first s2) (BNODE2 rdf:rest rdf:nil))
             #'(lambda (subj pol)
-                (nconc ()
-                       (loop for (pred obj) in pol
-                             collect (list subj pred (if (listp obj)
-                                                      (caar obj)
-                                                      obj))
-                             if (listp obj) append obj))))
+                (let ((s (if (listp subj) (caar subj) subj)))
+                  (nconc (if (listp subj) subj '())
+                         (loop for (pred obj) in pol
+                               collect (list s pred (if (listp obj)
+                                                        (caar obj)
+                                                        obj))
+                               if (listp obj) append obj)))))
    ;; [ p1 o1 ] . = ((BNODE1 p1 o1))
    ;; [ p1 o1 ] p2 o2 = ((BNODE1 p1 o1) (BNODE1 p2 o2))
    (blankNodePropertyList predicateObjectList?
@@ -390,8 +412,7 @@ If DATATYPE is non-nil it converted to a `quri:uri' if necessary."
   (subject
    iri
    BlankNode
-   ;; collection
-   )
+   collection)
   ;; [11] predicate ::= iri
   (predicate
    iri)
@@ -399,7 +420,7 @@ If DATATYPE is non-nil it converted to a `quri:uri' if necessary."
   (object
    iri
    BlankNode
-   ;; collection
+   collection
    blankNodePropertyList
    literal)
   ;; [13] literal ::= RDFLiteral | NumericLiteral | BooleanLiteral
@@ -420,6 +441,29 @@ If DATATYPE is non-nil it converted to a `quri:uri' if necessary."
                                                         obj))
                            if (listp obj) append obj))))))
   ;; [15] collection ::= '(' object* ')'
+  (collection
+   (|(| object* |)|
+        #'(lambda (ob objects cb)
+            (declare (ignore ob cb))
+            (if (null objects)
+                (quri:uri (getf rdfs-plist :nil))
+                (let ((nested-collections (remove-if-not #'listp objects))
+                      (triples (let ((bnode (add-bnode)))
+                                 (loop for (first . rest) on objects
+                                       collect (list bnode (quri:uri (getf rdfs-plist :first))
+                                                     (if (listp first)
+                                                         (caar first) ; TODO: Is this always correct? Retrieve right BNODE from `nested-collections' instead?
+                                                         first))
+                                       collect (list bnode (quri:uri (getf rdfs-plist :rest))
+                                                     (if (null rest)
+                                                         (quri:uri (getf rdfs-plist :nil))
+                                                         (setf bnode (add-bnode))))))))
+                  (nconc triples (car nested-collections)))))))
+  (object*
+   nil
+   (object object*
+           #'(lambda (first rest)
+               (cons first rest))))
   ;; [16] NumericLiteral ::= INTEGER | DECIMAL | DOUBLE
   (NumericLiteral
    (integer
