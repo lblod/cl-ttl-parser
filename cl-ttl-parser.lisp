@@ -113,7 +113,11 @@
    (return (values '|]| '|]|)))
 
   ;; Comments
-  ("#[^\\xA\\xD]*"))
+  "#[^\\xA\\xD]*"
+
+  ;; FIXME Catchall for if we encounter non-whitespace characters that cannot be matched by any of
+  ;; the above. The parser should bail out when receiving this. Should this be necessary?
+  ("\\S+" (return (values '|error| $@))))
 
 
 ;;
