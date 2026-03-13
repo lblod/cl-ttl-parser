@@ -6,4 +6,5 @@
   :serial t
   :depends-on (:alexandria :yacc :cl-lex :cl-ppcre :quri)
   :components ((:file "packages")
-               (:file "cl-ttl-parser")))
+               (:file "cl-ttl-parser")
+               (:file "serialize")))
