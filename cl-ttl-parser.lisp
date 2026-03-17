@@ -121,6 +121,33 @@
 
 
 ;;
+;; Parse uchar characters
+;;
+(defvar uchar-scanner
+  (cl-ppcre:create-scanner "(?:\\\\u([0-9A-Fa-f]{4}))|(?:\\\\U([0-9A-Fa-f]{8}))")
+  "Scanner for uchar character encodings.")
+
+(defun resolve-uchar (uchar-string start end match-start match-end reg-starts reg-ends)
+  "Replace the uchar in UCHAR-STRING located at REG-STARTS to REG-ENDS by their unicode counterpart."
+  (declare (ignore start end match-start match-end))
+  (flet ((or-reg (reg)
+           ;; NOTE (17/03/2026): REG-STARTS and REG-ENDS are arrays of length 2, one element for
+           ;; each capturing group in `uchar-scanner'. For "\u" matches the first element will
+           ;; contain the index and for "\U" matches the second element.
+           (or (aref reg 0)
+               (aref reg 1))))
+    (let ((s (or-reg reg-starts))
+          (e (or-reg reg-ends)))
+      (coerce
+       (list (code-char (parse-integer uchar-string :radix 16 :start s :end e)))
+       'string))))
+
+(defun replace-uchar (string)
+  "Replace each uchar encoding in STRING by its unicode counterpart."
+  (cl-ppcre:regex-replace-all uchar-scanner string #'resolve-uchar))
+
+
+;;
 ;; Base
 ;;
 (defvar *base-uri* nil)
@@ -151,10 +178,11 @@ This uses `quri:merge-uris' as implementation for RFC3986 Section 5.2 Relative R
 <https://www.rfc-editor.org/rfc/rfc3986#section-5.2>.  While the function's docstring refers to
 RFC2396 the implementation has been updated to accommodate the relevant changes between these two
 RFCs as described in <https://www.rfc-editor.org/rfc/rfc3986#appendix-D>."
-  (cond
-    ((uri-absolute-p iri) (quri:uri iri))
-    (*base-uri* (quri:merge-uris (quri:uri iri) *base-uri*))
-    (t (error 'iri-resolution-error :iri iri :reason "No base IRI"))))
+  (let ((iri (replace-uchar iri)))
+    (cond
+      ((uri-absolute-p iri) (quri:uri iri))
+      (*base-uri* (quri:merge-uris (quri:uri iri) *base-uri*))
+      (t (error 'iri-resolution-error :iri iri :reason "No base IRI")))))
 
 (defun set-base-uri (uri)
   "Set `*base-uri*' to the parsed URI."
