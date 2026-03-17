@@ -127,6 +127,24 @@
   (cl-ppcre:create-scanner "(?:\\\\u([0-9A-Fa-f]{4}))|(?:\\\\U([0-9A-Fa-f]{8}))")
   "Scanner for uchar character encodings.")
 
+(defun is-surrogate-p (uchar)
+  "Return t if UCHAR is a hexadecimal number that represents would represent a unicode surrogate.
+
+This will signal a `simple-parse-error' if UCHAR is not a valid hexadecimal number.
+High surrogates are numbers in the D800–DBFF range and low surrogates are in the DC00–DFFF range."
+  (let ((range-start (parse-integer "d800" :radix 16))
+        (range-end (parse-integer "dfff" :radix 16)))
+    (<= range-start uchar range-end)))
+
+(define-condition disallowed-character-error (cl-ttl-parser-error)
+  ((char :initarg :char :reader disallowed-char))
+  (:report (lambda (e stream)
+             (format
+              stream
+              "The character \"~A\" is not allowed in a terminal"
+              (disallowed-char e))))
+  (:documentation "Error signalled when encountering disallowed characters in a terminal."))
+
 (defun resolve-uchar (uchar-string start end match-start match-end reg-starts reg-ends)
   "Replace the uchar in UCHAR-STRING located at REG-STARTS to REG-ENDS by their unicode counterpart."
   (declare (ignore start end match-start match-end))
@@ -136,11 +154,12 @@
            ;; contain the index and for "\U" matches the second element.
            (or (aref reg 0)
                (aref reg 1))))
-    (let ((s (or-reg reg-starts))
-          (e (or-reg reg-ends)))
-      (coerce
-       (list (code-char (parse-integer uchar-string :radix 16 :start s :end e)))
-       'string))))
+    (let* ((s (or-reg reg-starts))
+           (e (or-reg reg-ends))
+           (uchar (parse-integer uchar-string :radix 16 :start s :end e)))
+      (if (is-surrogate-p uchar)
+          (error 'disallowed-character-error :char uchar-string)
+          (coerce (list (code-char uchar)) 'string)))))
 
 (defun replace-uchar (string)
   "Replace each uchar encoding in STRING by its unicode counterpart."
@@ -298,7 +317,8 @@ If LABEL is non-nil and does not yet exist, add it to `*bnode-labels'."
 (defun make-rdf-literal (&key value lang datatype)
   "Constructs a new RDF literal object.
 
-If DATATYPE is non-nil it converted to a `quri:uri' if necessary."
+If DATATYPE is non-nil it converted to a `quri:uri' if necessary.
+Any encountered uchars in VALUE are replaced by their unicode counterpart."
   (if (and lang datatype)
       ;; NOTE (20/03/2026): This is an extra check, the parser itself should already signal an error
       ;; when the input being parsed contains both elements.
@@ -306,7 +326,7 @@ If DATATYPE is non-nil it converted to a `quri:uri' if necessary."
   (when (and datatype (not (quri:uri-p datatype)))
     ;; TODO: Handle potential errors from quri?
     (setf datatype (quri:uri datatype)))
-  (make-rdf-literal* :value value :lang lang :datatype datatype))
+  (make-rdf-literal* :value (replace-uchar value) :lang lang :datatype datatype))
 
 
 ;;
