@@ -1,0 +1,102 @@
+@base <http://foo/bar/> .
+@prefix : <http://example.org/foo#> .
+
+# :subj1 :prop1 [ :innerProp1 :innerObj1 ] .
+# :subj2 :prop2 [ :innerProp2 :innerObj2 ; :innerProp3 :innerObj3 ] .
+# :subj3 :prop3 [ :innerProp4 [ :innerProp41 :innerObj41 ] ] .
+# :subj3 :prop3 [ :innerProp4 [ :innerProp41 :innerObj41 ; :innerProp42 [ :innerProp411 :innerObj411 ] ] ] .
+# [ :prop3 :obj1 ] .
+
+# <relative> <http://example.org/property1> () .
+# <relative2> <http://example.org/property2> (:one :two :three) .
+# <relative2> <http://example.org/property2> ( :one ( :a ( :1 :2 ) ) :three ) .
+# ( :a :b :c ) <http://example.org/property3> <object1> .
+# ( :a ( :1 :2 ) :c ) <http://example.org/property3> <object1> .
+( :a ( :1 :2 ( :alpha :beta ) ) :c ) <http://example.org/property3> <object1> .
+# (:one :two :three) <http://example.org/property2> (:a :b :c) .
+
+# <relative2> <http://example.org/property2> <object3> .
+
+# <relative2> <http://example.org/property1> """foo
+# "bar"""@nl .
+# <relative3> <http://example.org/property1> """foo  bar"""^^<http://www.w3.org/2001/XMLSchema#string> .
+
+# <relative> <http://example.org/property1> '''foo
+#   'bar''' .
+# <relative2> <http://example.org/property1> '''foo
+
+#   bar'''@nl .
+# <relative3> <http://example.org/property1> '''foo
+
+#   bar'''^^<http://www.w3.org/2001/XMLSchema#string> .
+
+# @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+# @prefix show: <http://example.org/vocab/show/> .
+# @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# show:218 rdfs:label "That Seventies Show"^^xsd:string .
+
+# <relative> <http://example.org/property1> 'foo\bbar'@nl .
+# <relative2> <http://example.org/property2> 'foo\'bar'@en-uk .
+# <relative3> <http://example.org/property2> 'foo\'bar'^^<http://www.w3.org/2001/XMLSchema#string> .
+
+# <relative> <http://example.org/property1> "foo\bbar"@fr .
+# <relative2> <http://example.org/property2> "foo\"bar"@fr-be .
+
+# _:bnode1 <property1> <object> .
+# <subject> <property2> _:bnode2 .
+
+# [] <property3> <object2> .
+# [] <property4> 1e10 .
+# [] <property4> +2E-2 .
+# [] <property4> -3.8e5 .
+# [] <property4> "foo" .
+
+# base <http://oof/rab/>
+
+# <relative2> <http://example.org/property2> <http://example.org/object2> .
+
+# BASE <foo/capitals/>
+
+# <relative3> <http://example.org/property3> <http://example.org/object3> .
+
+# @prefix foo: <http://example.org/bar#> .
+# @prefix oof: <http://example.org/rab#> .
+# @prefix bar: <http://example.org/rab#> .
+
+# foo:prefixedSubject foo:property oof:object1 .
+
+# PREFIX foo: <http://bar/baz/>
+
+# foo:prefixedSubject2 foo:property2 oof:object2 .
+
+# prefix foo: <http://lorem/ipsum/>
+
+# foo:prefixedSubject3 foo:property3 oof:object3 .
+
+# <http://example.org/subject1> foo: <http://example.org/object1> .
+
+# <http://mu.semte.ch/ext/subject2> a <http://mu.semte.ch/ext/object3> .
+
+# <http://example.org/subject1> <http://example.org/property1> <http://example.org/object1> ,
+#     <http://example.org/object2> .
+
+# <http://mu.semte.ch/ext/subject2> <http://mu.semte.ch/ext/property2> <http://mu.semte.ch/ext/object3> ,
+#     <http://mu.semte.ch/ext/object4> ,
+#     <http://mu.semte.ch/ext/object5> .
+
+# <http://mu.semte.ch/ext/subject3> <http://mu.semte.ch/ext/property3> <http://mu.semte.ch/ext/object6> ;
+#     <http://mu.semte.ch/ext/property4> <http://mu.semte.ch/ext/object7> .
+
+# <http://mu.semte.ch/ext/subject4> <http://mu.semte.ch/ext/property3> <http://mu.semte.ch/ext/object6> ;
+#     <http://mu.semte.ch/ext/property4> <http://mu.semte.ch/ext/object7> ;
+#   <http://mu.semte.ch/ext/property5> <http://mu.semte.ch/ext/object8> .
+
+# <http://mu.semte.ch/ext/subject5> <http://mu.semte.ch/ext/property3> <http://mu.semte.ch/ext/object6> ;
+#   <http://mu.semte.ch/ext/property4> <http://mu.semte.ch/ext/object7> ,
+#     <http://mu.semte.ch/ext/object8> .
+
+# <http://mu.semte.ch/ext/subject6> <http://mu.semte.ch/ext/property61> <http://mu.semte.ch/ext/object61> ;
+#   <http://mu.semte.ch/ext/property62> <http://mu.semte.ch/ext/object62> ,
+#     <http://mu.semte.ch/ext/object63> ;
+#   <http://mu.semte.ch/ext/property63> <http://mu.semte.ch/ext/object64> .
