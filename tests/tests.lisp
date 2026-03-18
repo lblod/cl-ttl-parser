@@ -18,13 +18,14 @@ If NAME is non-nil, any provided PATH is ignored."
 (defparameter *failed-tests* '())
 
 ;; TODO Check whether file exists
-;; TODO compare output to expected nt file? (graph isomorphism)
-(defun run-test (name &key (initial-base fallback-base) failp)
+(defun run-test (name &key (initial-base fallback-base) failp outputp)
   "Try to parse the contents of test with filename NAME.
 
 INITIAL-BASE will be passed on the `parse-ttl' to prevent errors caused by a missing base IRI.
 If FAILP is non-nil, the parsing is expected to raise a `yacc:yacc-parse-error' or
-`cl-ttl-parser:cl-ttl-parser-error'."
+`cl-ttl-parser:cl-ttl-parser-error'.
+If OUTPUTP is non-nil, the parsed graph will be persisted to file in the output-files directory
+using `serialize:write-to-file'."
   (let ((contents (read-test-file :name name)))
     (if failp
         (block :no-error
@@ -41,7 +42,11 @@ If FAILP is non-nil, the parsing is expected to raise a `yacc:yacc-parse-error' 
           (format t "~&~A: [FAIL] Expected a `yacc:yacc-parse-error' or `cl-ttl-parser-error' but no such error was received" name))
         (block :error
           (handler-case
-              (cl-ttl-parser:parse-ttl contents initial-base)
+              (if outputp
+                  (serialize:write-to-file
+                   (cl-ttl-parser:parse-ttl contents initial-base)
+                   (concatenate 'string "tests/output-files/" name ".nt"))
+                  (cl-ttl-parser:parse-ttl contents initial-base))
             (error (e)
               (push name *failed-tests*)
               (format t "~&~A: [FAIL] Received an unexpected error: ~A" name e)

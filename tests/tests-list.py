@@ -21,8 +21,9 @@ def parse_type(uri):
     type_name = parse_uri(uri)
     if type_name == "TestTurtleNegativeSyntax":
         return ":failp t"
-    else:
-        return ""
+    if type_name == "TestTurtleEval":
+        return ":outputp t"
+    return ""
 
 
 def base_for_test(name):
