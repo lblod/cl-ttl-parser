@@ -1,5 +1,5 @@
 (asdf:defsystem :cl-ttl-parser
-  :version "0.0.0"
+  :version "0.0.1"
   :name "cl-ttl-parser"
   :description "A parser for the RDF 1.1. Turtle specification."
   :license "MIT"
