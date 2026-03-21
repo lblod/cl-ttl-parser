@@ -1,5 +1,10 @@
 (in-package #:cl-ttl-parser)
 
+(define-condition cl-ttl-parser-error (simple-error)
+  ()
+  (:documentation "General error for use in TTL parsing.  Can be instantiated for extra information."))
+
+
 ;;
 ;; Lexer
 ;;
@@ -8,11 +13,19 @@
    (return (values '|;| '|;|)))
   ("\\,"
    (return (values '|,| '|,|)))
+  ("@base"
+   (return (values '|@base| '|@base|)))
+  ;; NOTE (09/03/2026): `cl-lex' does not seem to be able to handle a `?i' in the regex, using this dirty way to support case-insensitive sparqlBase.
+  ("[Bb][Aa][Ss][Ee]"
+   (return (values '|spBase| '|spBase|)))
 
   ;; [18] IRIREF ::= '<' ([^#x00-#x20<>"{}|^`\] | UCHAR)* '>' /* #x00=NULL #01-#x1F=control codes #x20=space */
   ("<(([^<>\"{}|^`\\x00-\\x20\\\\]|\\\\u[0-9A-Fa-f]{4}|\\\\U[0-9A-Fa-f]{8})*)>"
    (return (values 'iriref $1)))
   ;; [139s] PNAME_NS ::= PN_PREFIX? ':'
+  ;; TODO Support full PN_PREFIX character set
+  ("([a-zA-Z]*):"
+   (return (values 'pname_ns $1)))
   ;; [140s] PNAME_LN ::= PNAME_NS PN_LOCAL
   ;; [141s] BLANK_NODE_LABEL ::= '_:' (PN_CHARS_U | [0-9]) ((PN_CHARS | '.')* PN_CHARS)?
   ;; [144s] LANGTAG ::= '@' [a-zA-Z]+ ('-' [a-zA-Z0-9]+)*
@@ -49,12 +62,57 @@
 
 
 ;;
+;; Base
+;;
+(defvar *base-uri* nil)
+
+(defun uri-absolute-p (uri)
+  "Return t if URI is absolute, nil otherwise."
+  (let ((uri (if (quri:uri-p uri) uri (quri:uri uri))))
+    (and (quri:uri-scheme uri)
+         (or (quri:uri-host uri)
+             (quri:uri-path uri)))))
+
+(define-condition iri-resolution-error (cl-ttl-parser-error)
+  ((iri :initarg :iri :reader iri-resolution-error-iri)
+   (reason :initarg :reason :reader iri-resolution-error-reason))
+  (:report (lambda (e stream)
+             (format stream "Could not resolve IRI \"~A\" because \"~A\""
+                     (iri-resolution-error-iri e)
+                     (iri-resolution-error-reason e))))
+  (:documentation "Error signalled when an IRI cannot be resolved."))
+
+(defun resolve-iri (iri)
+  "Resolve IRI to an absolute one using `*base-uri*'.
+
+If IRI contains a scheme and a host or path it is assumed that IRI is already an absolute uri and it
+is returned as is.
+
+This uses `quri:merge-uris' as implementation for RFC3986 Section 5.2 Relative Resolution:
+<https://www.rfc-editor.org/rfc/rfc3986#section-5.2>.  While the function's docstring refers to
+RFC2396 the implementation has been updated to accommodate the relevant changes between these two
+RFCs as described in <https://www.rfc-editor.org/rfc/rfc3986#appendix-D>."
+  (cond
+    ((uri-absolute-p iri) (quri:uri iri))
+    (*base-uri* (quri:merge-uris (quri:uri iri) *base-uri*))
+    (t (error 'iri-resolution-error :iri iri :reason "No base IRI"))))
+
+(defun set-base-uri (uri)
+  "Set `*base-uri*' to the parsed URI."
+  (setf *base-uri*
+        (if (uri-absolute-p uri)
+            (quri:uri uri)
+            (resolve-iri uri))))
+
+
+;;
 ;; Parser
 ;;
 (yacc:define-parser *ttl-parser*
   (:start-symbol turtleDoc)
   (:terminals ( |a|
                 |.| |,| |;|
+                |@base| |spBase|
                 iriref))
   (:precedence nil)
 
@@ -66,15 +124,32 @@
                   (nconc td s))))
   ;; [2] statement ::= directive | triples '.'
   (statement
-   ;; directive
+   directive
    (triples |.|
             #'(lambda (tr d)
                 (declare (ignore d))
                 tr)))
   ;; [3] directive ::= prefixID | base | sparqlPrefix | sparqlBase
+  (directive
+   ;; prefixID
+   base
+  ;;  sparqlPrefix
+   sparqlBase)
   ;; [4] prefixID ::= '@prefix' PNAME_NS IRIREF '.'
   ;; [5] base ::= '@base' IRIREF '.'
+  (base
+   (|@base| iriref |.|
+            #'(lambda (b i d)
+                (declare (ignore b d))
+                (set-base-uri i)
+                nil)))
   ;; [5s] sparqlBase ::= "BASE" IRIREF
+  (sparqlBase
+   (|spBase| iriref
+             #'(lambda (b i)
+                 (declare (ignore b))
+                 (set-base-uri i)
+                 nil)))
   ;; [6s] sparqlPrefix ::= "PREFIX" PNAME_NS IRIREF
   ;; [6] triples ::= subject predicateObjectList | blankNodePropertyList predicateObjectList?
   (triples
@@ -143,6 +218,10 @@
   ;; [133s] BooleanLiteral ::= 'true' | 'false'
   ;; [17] String ::= STRING_LITERAL_QUOTE | STRING_LITERAL_SINGLE_QUOTE | STRING_LITERAL_LONG_SINGLE_QUOTE | STRING_LITERAL_LONG_QUOTE
   ;; [135s] iri ::= IRIREF | PrefixedName
+  (iri
+   (iriref #'(lambda (i) (resolve-iri i)))
+   ;; PrefixedName
+   )
   ;; [136s] PrefixedName ::= PNAME_LN | PNAME_NS
   ;; [137s] BlankNode ::= BLANK_NODE_LABEL | ANON
   )
@@ -151,6 +230,10 @@
 ;;
 ;; Public API
 ;;
-(defun parse-ttl (string)
-  "Parse STRING as a graph described using ttl format."
-  (yacc:parse-with-lexer (ttl-lexer string) *ttl-parser*))
+(defun parse-ttl (string &optional initial-base)
+  "Parse STRING as a graph described using ttl format.
+
+INITIAL-BASE is used to resolve relative IRIs encountered before a base is explicitly set in the
+STRING.  This includes relative IRIs set as base before any other absolute base is set."
+  (let ((*base-uri* initial-base))
+    (yacc:parse-with-lexer (ttl-lexer string) *ttl-parser*)))
