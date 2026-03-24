@@ -2,7 +2,8 @@
 
 (defpackage :cl-ttl-parser
   (:use :common-lisp)
-  (:export :parse-ttl))
+  (:export :parse-ttl
+   :rdf-literal :rdf-literal-value :rdf-literal-lang :rdf-literal-datatype))
 
 (defpackage #:terminals
   (:use :common-lisp))
