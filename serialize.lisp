@@ -43,15 +43,15 @@ The literal URI is just taken as is, no further transformations are applied."
 
 (defun serialize-literal (literal)
   "Serialize an rdf LITERAL into its corresponding representation."
-  (when (cl-ttl-parser::rdf-literal-p literal)
+  (when (cl-ttl-parser:rdf-literal-p literal)
     (concatenate
      'string
      "\""
-     (serialize-string (cl-ttl-parser::rdf-literal-value literal))
+     (serialize-string (cl-ttl-parser:rdf-literal-value literal))
      "\""
-     (when-let ((lang (cl-ttl-parser::rdf-literal-lang literal)))
+     (when-let ((lang (cl-ttl-parser:rdf-literal-lang literal)))
        (format nil "@~A" lang))
-     (when-let ((datatype (cl-ttl-parser::rdf-literal-datatype literal)))
+     (when-let ((datatype (cl-ttl-parser:rdf-literal-datatype literal)))
        (format nil "^^~A" (serialize-uri datatype))))))
 
 (defun serialize-object (object)
@@ -60,7 +60,7 @@ The literal URI is just taken as is, no further transformations are applied."
 OBJECT should represent a uri, rdf literal, or blank node."
   (cond
     ((quri:uri-p object) (serialize-uri object))
-    ((cl-ttl-parser::rdf-literal-p object) (serialize-literal object))
+    ((cl-ttl-parser:rdf-literal-p object) (serialize-literal object))
     (t (serialize-bnode object))))
 
 (defun serialize-subject (subject)
