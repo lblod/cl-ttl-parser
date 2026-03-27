@@ -27,11 +27,8 @@ The literal URI is just taken as is, no further transformations are applied."
   (format nil "<~A>" (quri:render-uri uri)))
 
 (defun serialize-bnode (bnode)
-  "Serialize the uri BNODE into a blank node label."
-  ;; TODO: Should this be part of the parsing instead?
-  (unless (cl-ppcre:scan "^_:+" bnode)
-    (setf bnode (concatenate 'string "_:" bnode)))
-  (format nil "~A" bnode))
+  "Serialize the `blank-node' BNODE into a blank node label."
+  (format nil "_:~A" (cl-ttl-parser:blank-node-label bnode)))
 
 ;; TODO: This is disturbingly dirty, should rewrite it
 (defun serialize-string (str)

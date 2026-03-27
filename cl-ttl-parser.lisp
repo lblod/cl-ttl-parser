@@ -267,31 +267,36 @@ iri it will be resolved against the current `*base*'."
 ;;
 ;; Blank nodes
 ;;
+(defstruct blank-node
+  (label (error "A blank node must have a label") :type string))
+
 (defvar *bnode-labels* nil
-  "A list of known blank node labels.")
+  "A alist of known blank node labels as keys and their corresponding `blank-node' as value.")
 
-(defparameter *bnode-counter* 0
-  "Counter used to assign unique labels to anonymous nodes.")
+(defparameter *graph-id* ""
+  "A unique id to identify the graph currently being parsed.")
 
-(defparameter *bnode-id* ""
-  "A unique id used to construct the label for all blank nodes in a graph.")
+(defun register-blank-node (&optional label)
+  "Register a blank node for LABEL and return the corresponding `blank-node' object.
 
-(defun add-bnode (&optional label)
-  "Add a new blank node to *bnode-labels* and return it.
+If LABEL is non-nil and is
+- a key in `*bnode-labels*', return the corresponding `blank-node' value
+- not a key in `*bnode-labels*', make a new `blank-node' and add it to `*bnode-labels*' with LABEL
+  as key, and return new `blank-node'.
 
-If LABEL is nil, generate the next unique label and add it to `*bnode-labels'.
-If LABEL is non-nil and does not yet exist, add it to `*bnode-labels'."
-  (unless label
-    (progn
-      (setf label (concatenate 'string
-                               "bnode-"
-                               *bnode-id*
-                               "-"
-                               (write-to-string (incf *bnode-counter*))))))
-  (unless (member label *bnode-labels*)
-    (push label *bnode-labels*))
-  label)
-
+If LABEL is nil, make a new `blank-node' and add it to `*bnode-labels*' with its newly generated
+label as key."
+  (flet ((next-bnode-label ()
+             (concatenate
+              'string
+              "bnode-" *graph-id* "-" (write-to-string (length *bnode-labels*)))))
+    (let ((label (or label (next-bnode-label)))
+          (bnode-cons (assoc label *bnode-labels* :test #'string=)))
+    (if bnode-cons
+        (cdr bnode-cons)
+        (let ((bnode (make-blank-node :label (next-bnode-label))))
+          (push (cons label bnode) *bnode-labels*)
+          bnode)))))
 
 ;;
 ;; RDF Literals
@@ -485,7 +490,7 @@ Any encountered uchars in VALUE are replaced by their unicode counterpart."
    (|[| predicateObjectList |]|
         #'(lambda (ob pol cb)
             (declare (ignore ob cb))
-            (let ((bnode (add-bnode)))
+            (let ((bnode (register-blank-node)))
               (nconc ()
                      (loop for (pred obj) in pol
                            collect (list bnode pred (if (listp obj)
@@ -500,7 +505,7 @@ Any encountered uchars in VALUE are replaced by their unicode counterpart."
             (if (null objects)
                 (quri:uri (getf rdfs-plist :nil))
                 (let ((nested-collections (remove-if-not #'listp objects))
-                      (triples (let ((bnode (add-bnode)))
+                      (triples (let ((bnode (register-blank-node)))
                                  (loop for (first . rest) on objects
                                        collect (list bnode (quri:uri (getf rdfs-plist :first))
                                                      (if (listp first)
@@ -509,7 +514,7 @@ Any encountered uchars in VALUE are replaced by their unicode counterpart."
                                        collect (list bnode (quri:uri (getf rdfs-plist :rest))
                                                      (if (null rest)
                                                          (quri:uri (getf rdfs-plist :nil))
-                                                         (setf bnode (add-bnode))))))))
+                                                         (setf bnode (register-blank-node))))))))
                   (nconc triples (car nested-collections)))))))
   (object*
    nil
@@ -569,11 +574,11 @@ Any encountered uchars in VALUE are replaced by their unicode counterpart."
   ;; [137s] BlankNode ::= BLANK_NODE_LABEL | ANON
   (BlankNode
    (blank-node-label
-    #'(lambda (l) (add-bnode l)))
+    #'(lambda (l) (register-blank-node l)))
    (anon
     #'(lambda (l)
         (declare (ignore l)) ; NOTE (02/03/2026): Ignore `anon' terminal
-        (add-bnode)))))
+        (register-blank-node)))))
 
 
 ;;
@@ -587,8 +592,7 @@ STRING.  This includes relative IRIs set as base before any other absolute base 
   (let ((*base-uri* initial-base)
         (*namespace* nil)
         (*bnode-labels* nil)
-        (*bnode-counter* 0)
         ;; NOTE (03/03/2026): Using `random' here to avoid dragging in UUID generators and their
         ;; dependencies.
-        (*bnode-id* (write-to-string (random 99999))))
+        (*graph-id* (write-to-string (random 99999))))
     (yacc:parse-with-lexer (ttl-lexer string) *ttl-parser*)))
