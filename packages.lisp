@@ -4,7 +4,7 @@
   (:use :common-lisp)
   (:export :parse-ttl
    :rdf-literal :rdf-literal-p :rdf-literal-value :rdf-literal-lang :rdf-literal-datatype
-   :blank-node :blank-node-label))
+   :blank-node :blank-node-p :blank-node-label))
 
 (defpackage #:terminals
   (:use :common-lisp))
