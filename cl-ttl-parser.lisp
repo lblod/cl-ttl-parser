@@ -21,6 +21,8 @@
 ;;
 ;; Lexer
 ;;
+(named-readtables:in-readtable :interpol-syntax)
+
 (cl-lex:define-string-lexer ttl-lexer
   ("\\;+"
    (return (values '|;| '|;|)))
@@ -51,13 +53,14 @@
   ("<(([^<>\"{}|^`\\x00-\\x20\\\\]|\\\\u[0-9A-Fa-f]{4}|\\\\U[0-9A-Fa-f]{8})*)>"
    (return (values 'iriref $1)))
   ;; [140s] PNAME_LN ::= PNAME_NS PN_LOCAL
-  ("([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8](([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[\\-0-9\\xB7]|\\.)*([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[\\-0-9\\xB7]))?)?:([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|:|[0-9]|%[0-9A-Fa-f][0-9A-Fa-f]|\\\\[_~.\\-!$&'()*+,;=/?#@%])(([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[\\-0-9\\xB7]|\\.|:|%[0-9A-Fa-f][0-9A-Fa-f]|\\\\[_~.\\-!$&'()*+,;=/?#@%])*([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[\\-0-9\\xB7]|:|%[0-9A-Fa-f][0-9A-Fa-f]|\\\\[_~.\\-!$&'()*+,;=/?#@%]))?"
+  (#?"([A-Za-z\x{C0}-\x{D6}\x{D8}-\x{F6}\x{f8}-\x{2ff}\x{370}-\x{37D}\x{37F}-\x{1FFF}\x{200C}-\x{200D}\x{2070}-\x{218F}\x{2C00}-\x{2FEF}\x{3001}-\x{D7FF}\x{F900}-\x{FDCF}\x{FDF0}-\x{FFFD}\x{10000}-\x{EFFFF}](([A-Za-z\x{C0}-\x{D6}\x{D8}-\x{F6}\x{f8}-\x{2ff}\x{370}-\x{37D}\x{37F}-\x{1FFF}\x{200C}-\x{200D}\x{2070}-\x{218F}\x{2C00}-\x{2FEF}\x{3001}-\x{D7FF}\x{F900}-\x{FDCF}\x{FDF0}-\x{FFFD}\x{10000}-\x{EFFFF}]|_|[\\-0-9]|[\x{B7}\x{300}-\x{36F}\x{203F}-\x{2040}]|\\.)*([A-Za-z\x{C0}-\x{D6}\x{D8}-\x{F6}\x{f8}-\x{2ff}\x{370}-\x{37D}\x{37F}-\x{1FFF}\x{200C}-\x{200D}\x{2070}-\x{218F}\x{2C00}-\x{2FEF}\x{3001}-\x{D7FF}\x{F900}-\x{FDCF}\x{FDF0}-\x{FFFD}\x{10000}-\x{EFFFF}]|_|[\\-0-9]|[\x{B7}\x{300}-\x{36F}\x{203F}-\x{2040}]))?)?:([A-Za-z\x{C0}-\x{D6}\x{D8}-\x{F6}\x{f8}-\x{2ff}\x{370}-\x{37D}\x{37F}-\x{1FFF}\x{200C}-\x{200D}\x{2070}-\x{218F}\x{2C00}-\x{2FEF}\x{3001}-\x{D7FF}\x{F900}-\x{FDCF}\x{FDF0}-\x{FFFD}\x{10000}-\x{EFFFF}]|_|:|[0-9]|%[0-9A-Fa-f][0-9A-Fa-f]|\\\\[_~.\\-!$&'()*+,;=/?#@%])(([A-Za-z\x{C0}-\x{D6}\x{D8}-\x{F6}\x{f8}-\x{2ff}\x{370}-\x{37D}\x{37F}-\x{1FFF}\x{200C}-\x{200D}\x{2070}-\x{218F}\x{2C00}-\x{2FEF}\x{3001}-\x{D7FF}\x{F900}-\x{FDCF}\x{FDF0}-\x{FFFD}\x{10000}-\x{EFFFF}]|_|[\\-0-9]|[\x{B7}\x{300}-\x{36F}\x{203F}-\x{2040}]|\\.|:|%[0-9A-Fa-f][0-9A-Fa-f]|\\\\[_~.\\-!$&'()*+,;=/?#@%])*([A-Za-z\x{C0}-\x{D6}\x{D8}-\x{F6}\x{f8}-\x{2ff}\x{370}-\x{37D}\x{37F}-\x{1FFF}\x{200C}-\x{200D}\x{2070}-\x{218F}\x{2C00}-\x{2FEF}\x{3001}-\x{D7FF}\x{F900}-\x{FDCF}\x{FDF0}-\x{FFFD}\x{10000}-\x{EFFFF}]|_|[\\-0-9]|[\x{B7}\x{300}-\x{36F}\x{203F}-\x{2040}]|:|%[0-9A-Fa-f][0-9A-Fa-f]|\\\\[_~.\\-!$&'()*+,;=/?#@%]))?"
    (return (values 'pname_ln $@)))
   ;; [139s] PNAME_NS ::= PN_PREFIX? ':'
-  ("([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8](([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[\\-0-9\\xB7]|\\.)*([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[\\-0-9\\xB7]))?)?:"
+  (#?"([A-Za-z\x{C0}-\x{D6}\x{D8}-\x{F6}\x{f8}-\x{2ff}\x{370}-\x{37D}\x{37F}-\x{1FFF}\x{200C}-\x{200D}\x{2070}-\x{218F}\x{2C00}-\x{2FEF}\x{3001}-\x{D7FF}\x{F900}-\x{FDCF}\x{FDF0}-\x{FFFD}\x{10000}-\x{EFFFF}](([A-Za-z\x{C0}-\x{D6}\x{D8}-\x{F6}\x{f8}-\x{2ff}\x{370}-\x{37D}\x{37F}-\x{1FFF}\x{200C}-\x{200D}\x{2070}-\x{218F}\x{2C00}-\x{2FEF}\x{3001}-\x{D7FF}\x{F900}-\x{FDCF}\x{FDF0}-\x{FFFD}\x{10000}-\x{EFFFF}]|_|[\\-0-9]|[\x{B7}\x{300}-\x{36F}\x{203F}-\x{2040}]|\\.)*([A-Za-z\x{C0}-\x{D6}\x{D8}-\x{F6}\x{f8}-\x{2ff}\x{370}-\x{37D}\x{37F}-\x{1FFF}\x{200C}-\x{200D}\x{2070}-\x{218F}\x{2C00}-\x{2FEF}\x{3001}-\x{D7FF}\x{F900}-\x{FDCF}\x{FDF0}-\x{FFFD}\x{10000}-\x{EFFFF}]|_|[\\-0-9]|[\x{B7}\x{300}-\x{36F}\x{203F}-\x{2040}]))?)?:"
    (return (values 'pname_ns $@)))
   ;; [141s] BLANK_NODE_LABEL ::= '_:' (PN_CHARS_U | [0-9]) ((PN_CHARS | '.')* PN_CHARS)?
-  ("_:([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[0-9])(([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[\\-0-9\\xB7]|\\.)*([A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]|_|[\\-0-9\\xB7]))?"
+  (#?"_:([A-Za-z\x{C0}-\x{D6}\x{D8}-\x{F6}\x{f8}-\x{2ff}\x{370}-\x{37D}\x{37F}-\x{1FFF}\x{200C}-\x{200D}\x{2070}-\x{218F}\x{2C00}-\x{2FEF}\x{3001}-\x{D7FF}\x{F900}-\x{FDCF}\x{FDF0}-\x{FFFD}\x{10000}-\x{EFFFF}]|_|[0-9])(([A-Za-z\x{C0}-\x{D6}\x{D8}-\x{F6}\x{f8}-\x{2ff}\x{370}-\x{37D}\x{37F}-\x{1FFF}\x{200C}-\x{200D}\x{2070}-\x{218F}\x{2C00}-\x{2FEF}\x{3001}-\x{D7FF}\x{F900}-\x{FDCF}\x{FDF0}-\x{FFFD}\x{10000}-\x{EFFFF}]|_|[\\-0-9]|[\x{B7}\x{300}-\x{36F}\x{203F}-\x{2040}]|\\.)*([A-Za-z\x{C0}-\x{D6}\x{D8}-\x{F6}\x{f8}-\x{2ff}\x{370}-\x{37D}\x{37F}-\x{1FFF}\x{200C}-\x{200D}\x{2070}-\x{218F}\x{2C00}-\x{2FEF}\x{3001}-\x{D7FF}\x{F900}-\x{FDCF}\x{FDF0}-\x{FFFD}\x{10000}-\x{EFFFF}]|_|[\\-0-9]|[\x{B7}\x{300}-\x{36F}\x{203F}-\x{2040}]))?"
+
    (return (values 'blank-node-label $@)))
   ;; [144s] LANGTAG ::= '@' [a-zA-Z]+ ('-' [a-zA-Z0-9]+)*
   ("@([a-zA-Z]+(-[a-zA-Z0-9]+)*)"

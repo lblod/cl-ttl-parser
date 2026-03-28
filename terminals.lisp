@@ -1,6 +1,8 @@
 ;; Helper variables for the terminal regular expressions.
 (in-package :terminals)
 
+(named-readtables:in-readtable :interpol-syntax)
+
 (defvar pn-local-esc "\\\\[_~.\\-!$&'()*+,;=/?#@%]"
   "[172s] PN_LOCAL_ESC ::= '\' ('_' | '~' | '.' | '-' | '!' | '$' | '&' | \"'\" | '(' | ')' | '*' | '+' | ',' | ';' | '=' | '/' | '?' | '#' | '@' | '%')")
 
@@ -13,15 +15,13 @@
 (defvar plx (concatenate 'string percent "|" pn-local-esc)
   "[169s] PLX ::= PERCENT | PN_LOCAL_ESC")
 
-;; TODO remaining unicode characters
-(defvar pn-chars-base "[A-Za-z\\xC0-\\xD6\\xD8-\\xF6\\xF8]"
+(defvar pn-chars-base #?"[A-Za-z\x{C0}-\x{D6}\x{D8}-\x{F6}\x{f8}-\x{2ff}\x{370}-\x{37D}\x{37F}-\x{1FFF}\x{200C}-\x{200D}\x{2070}-\x{218F}\x{2C00}-\x{2FEF}\x{3001}-\x{D7FF}\x{F900}-\x{FDCF}\x{FDF0}-\x{FFFD}\x{10000}-\x{EFFFF}]"
   "[163s] PN_CHARS_BASE ::= [A-Z] | [a-z] | [#x00C0-#x00D6] | [#x00D8-#x00F6] | [#x00F8-#x02FF] | [#x0370-#x037D] | [#x037F-#x1FFF] | [#x200C-#x200D] | [#x2070-#x218F] | [#x2C00-#x2FEF] | [#x3001-#xD7FF] | [#xF900-#xFDCF] | [#xFDF0-#xFFFD] | [#x10000-#xEFFFF]")
 
 (defvar pn-chars-u (concatenate 'string pn-chars-base "|_")
   "[164s] PN_CHARS_U ::= PN_CHARS_BASE | '_'")
 
-;; TODO remaining unicode characters
-(defvar pn-chars (concatenate 'string pn-chars-u "|[\\-0-9\\xB7]")
+(defvar pn-chars (concatenate 'string pn-chars-u "|[\\-0-9]|" #?"[\x{B7}\x{300}-\x{36F}\x{203F}-\x{2040}]")
   "[166s] PN_CHARS ::= PN_CHARS_U | '-' | [0-9] | #x00B7 | [#x0300-#x036F] | [#x203F-#x2040]")
 
 (defvar pn-local (concatenate 'string "(" pn-chars-u "|:|[0-9]|" plx ")((" pn-chars "|\\.|:|" plx ")*(" pn-chars "|:|" plx "))?")
