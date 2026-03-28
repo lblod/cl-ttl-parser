@@ -195,6 +195,8 @@ In parsed:
 ## Dependencies
 - [cl-lex](https://github.com/djr7C4/cl-lex)
 - [cl-yacc](https://www.irif.fr/~jch/software/cl-yacc/)
+- [cl-ppcre](https://edicl.github.io/cl-ppcre/)
+- [cl-interpol](https://edicl.github.io/cl-interpol/)
 - [quri](https://github.com/fukamachi/quri)
 
 For running the tests:
@@ -202,5 +204,5 @@ For running the tests:
 
 
 ## Known issues
-1. The regular expressions for `PN_CHARS_BASE` and `PN_CHARS` do not yet support the full (unicode) character set.
-2. In some cases merging an IRI with a base results in an incorrect result.  This is visible by the `IRI-resolution-01` and `IRI-resolution-07` tests resulting in graphs that are not equivalent to the expected result.  The underlying issued is that the result from `quri:merge-uris` differs from the merged IRIs expected by the test suite.  Further investigate whether this is a bug in quri's implementation of the URI resolution algorithm of [RFC3986](https://www.rfc-editor.org/rfc/rfc3986#section-5.2)
+### Relative IRI resolution
+In some cases merging an IRI with a base results in an incorrect result.  This is visible by the `IRI-resolution-01` and `IRI-resolution-07` tests resulting in graphs that are not equivalent to the expected result.  The underlying issue is that `quri:merge-uris` is not fully compliant to the algorithm in [section 5.2 of RFC3986](https://www.rfc-editor.org/rfc/rfc3986#section-5.2).  This has been reported upstream in issue [#92](https://github.com/fukamachi/quri/issues/92).
