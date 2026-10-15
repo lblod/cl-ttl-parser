@@ -3,7 +3,7 @@
 > [!warning]
 > This project should be considered in a beta phase, its public API may still change over time.
 
-An [RDF 1.1 Turtle](https://www.w3.org/TR/turtle/) parser written in Common Lisp.  This parser aims to be compliant with that specification.  Any behaviour that deviates should be considered a but, please check [known issues](#known-issues) before reporting.
+An [RDF 1.1 Turtle](https://www.w3.org/TR/turtle/) parser written in Common Lisp.  This parser aims to be compliant with that specification.  Any behaviour that deviates should be considered a bug, please check [known issues](#known-issues) before reporting.
 
 
 ## Usage
